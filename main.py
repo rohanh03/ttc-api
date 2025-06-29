@@ -32,7 +32,7 @@ def get_eta_for_stop(stop_id):
     eta_list = []
 
     for predictions_block in root.findall('.//predictions'):
-        route_tag = predictions_block.attrib.get('routeTag')
+        route_tag = predictions_block.attrib.get('routeTag') or "Unknown"
         stop_title = predictions_block.attrib.get('stopTitle')
 
     for direction in predictions_block.findall('.//direction'):
@@ -51,7 +51,7 @@ def get_eta_for_stop(stop_id):
                 epoch_time = int(epoch_str) if epoch_str and epoch_str.isdigit() else 0
 
                 eta_entry = {
-                    'routeTag': prediction.attrib.get('routeTag'),
+                    'routeTag': route_tag if route_tag else "Unknown",
                     'stopTitle': stop_title,
                     'vehicle': prediction.attrib.get('vehicle'),
                     'minutes': minutes,
@@ -80,3 +80,25 @@ def root():
 @app.get("/eta/{stop_id}")
 def eta(stop_id: int):
     return get_eta_for_stop(stop_id)
+
+@app.get("/route-stops/{route_tag}")
+def get_route_stops(route_tag: str):
+    url = f"https://retro.umoiq.com/service/publicXMLFeed?command=routeConfig&a=ttc&r={route_tag}"
+    try:
+        response = requests.get(url)
+        response.raise_for_status()
+        root = ET.fromstring(response.content)
+
+        stops = []
+        for stop in root.findall('.//stop'):
+            stop_id = stop.attrib.get("stopId")
+            if stop_id:
+                stops.append({
+                    "title": stop.attrib.get("title"),
+                    "stopId": stop_id
+                })
+
+        return stops
+    except Exception as e:
+        return {"error": str(e)}
+
