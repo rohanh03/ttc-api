@@ -31,26 +31,43 @@ def get_eta_for_stop(stop_id):
 
     eta_list = []
 
-    for direction in root.findall('.//direction'):
+    for predictions_block in root.findall('.//predictions'):
+        route_tag = predictions_block.attrib.get('routeTag')
+        stop_title = predictions_block.attrib.get('stopTitle')
+
+    for direction in predictions_block.findall('.//direction'):
         direction_title = direction.attrib.get('title', 'Unknown Direction')
 
+    
         for prediction in direction.findall('prediction'):
             try:
+                minutes_str = prediction.attrib.get('minutes')
+                seconds_str = prediction.attrib.get('seconds')
+                epoch_str = prediction.attrib.get('epochTime')
+                stop_title = predictions_block.attrib.get('stopTitle')
+
+                minutes = int(minutes_str) if minutes_str and minutes_str.isdigit() else 0
+                seconds = int(seconds_str) if seconds_str and seconds_str.isdigit() else 0
+                epoch_time = int(epoch_str) if epoch_str and epoch_str.isdigit() else 0
+
                 eta_entry = {
                     'routeTag': prediction.attrib.get('routeTag'),
+                    'stopTitle': stop_title,
                     'vehicle': prediction.attrib.get('vehicle'),
-                    'minutes': int(prediction.attrib.get('minutes')),
-                    'seconds': int(prediction.attrib.get('seconds')),
-                    'epochTime': int(prediction.attrib.get('epochTime')),
+                    'minutes': minutes,
+                    'seconds': seconds,
+                    'epochTime': epoch_time,
                     'isDeparture': prediction.attrib.get('isDeparture') == 'true',
                     'affectedByLayover': prediction.attrib.get('affectedByLayover') == 'true',
                     'tripTag': prediction.attrib.get('tripTag'),
                     'block': prediction.attrib.get('block'),
                     'dirTag': prediction.attrib.get('dirTag'),
                     'direction': direction_title,
-                    'timestamp': datetime.fromtimestamp(int(prediction.attrib.get('epochTime')) / 1000).strftime('%Y-%m-%d %H:%M:%S')
+                    'timestamp': datetime.fromtimestamp(epoch_time / 1000).strftime('%Y-%m-%d %H:%M:%S') if epoch_time else None
                 }
+
                 eta_list.append(eta_entry)
+
             except Exception as e:
                 print(f"Failed to parse one of the prediction entries: {e}")
 
