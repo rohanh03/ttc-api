@@ -1,5 +1,3 @@
-# main.py
-
 from fastapi import FastAPI
 import requests
 import xml.etree.ElementTree as ET
@@ -7,36 +5,54 @@ from datetime import datetime
 
 app = FastAPI()
 
-def get_eta_for_stop(stop_id: int):
+def get_eta_for_stop(stop_id):
+    """
+    Fetch real-time TTC predictions (ETAs) for a given stop using UMOIQ (NextBus) API.
+    
+    Args:
+        stop_id (str or int): TTC stop ID (from ttc_stops.csv).
+    
+    Returns:
+        List[dict]: List of dictionaries, each containing route, direction, arrival time, and vehicle info.
+    """
+
     url = f"https://retro.umoiq.com/service/publicXMLFeed?command=predictions&a=ttc&stopId={stop_id}"
 
     try:
         response = requests.get(url)
         response.raise_for_status()
     except requests.RequestException as e:
-        return {"error": f"Failed to fetch data: {str(e)}"}
+        return {"error": f"Error fetching data for stopId {stop_id}: {e}"}
 
     try:
         root = ET.fromstring(response.content)
     except ET.ParseError as e:
-        return {"error": f"XML Parsing error: {str(e)}"}
+        return {"error": f"XML Parsing error for stopId {stop_id}: {e}"}
 
     eta_list = []
+
     for direction in root.findall('.//direction'):
         direction_title = direction.attrib.get('title', 'Unknown Direction')
+
         for prediction in direction.findall('prediction'):
             try:
-                minutes_str = prediction.attrib.get('minutes')
-                epoch_str = prediction.attrib.get('epochTime')
-                eta_list.append({
+                eta_entry = {
                     'routeTag': prediction.attrib.get('routeTag'),
                     'vehicle': prediction.attrib.get('vehicle'),
-                    'minutes': int(minutes_str) if minutes_str is not None else None,
+                    'minutes': int(prediction.attrib.get('minutes')),
+                    'seconds': int(prediction.attrib.get('seconds')),
+                    'epochTime': int(prediction.attrib.get('epochTime')),
+                    'isDeparture': prediction.attrib.get('isDeparture') == 'true',
+                    'affectedByLayover': prediction.attrib.get('affectedByLayover') == 'true',
+                    'tripTag': prediction.attrib.get('tripTag'),
+                    'block': prediction.attrib.get('block'),
+                    'dirTag': prediction.attrib.get('dirTag'),
                     'direction': direction_title,
-                    'timestamp': datetime.fromtimestamp(int(epoch_str)).isoformat() if epoch_str is not None else None
-                })
-            except Exception:
-                continue
+                    'timestamp': datetime.fromtimestamp(int(prediction.attrib.get('epochTime')) / 1000).strftime('%Y-%m-%d %H:%M:%S')
+                }
+                eta_list.append(eta_entry)
+            except Exception as e:
+                print(f"Failed to parse one of the prediction entries: {e}")
 
     return eta_list
 
