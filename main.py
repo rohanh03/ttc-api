@@ -101,4 +101,68 @@ def get_route_stops(route_tag: str):
         return stops
     except Exception as e:
         return {"error": str(e)}
+    
+@app.get("/debug/test-route-tags")
+def debug_test_route_tags():
+    import time
+    route_list_url = "https://retro.umoiq.com/service/publicXMLFeed?command=routeList&a=ttc"
+    try:
+        route_resp = requests.get(route_list_url)
+        route_resp.raise_for_status()
+        route_root = ET.fromstring(route_resp.content)
+    except Exception as e:
+        return {"error": f"Failed to fetch route list: {str(e)}"}
+
+    route_tags = [r.attrib['tag'] for r in route_root.findall('.//route')]
+    results = []
+
+    for tag in route_tags[:10]:  # Test only first 10 routes for speed
+        route_result = {"routeTag": tag, "status": "not found"}
+
+        # Get route config to find a stopId
+        config_url = f"https://retro.umoiq.com/service/publicXMLFeed?command=routeConfig&a=ttc&r={tag}"
+        try:
+            config_resp = requests.get(config_url)
+            config_root = ET.fromstring(config_resp.content)
+            stop_elements = config_root.findall('.//stop')
+        except Exception as e:
+            route_result["status"] = f"routeConfig failed: {str(e)}"
+            results.append(route_result)
+            continue
+
+        if not stop_elements:
+            route_result["status"] = "no stops found"
+            results.append(route_result)
+            continue
+
+        stop_id = stop_elements[0].attrib.get("stopId")
+        if not stop_id:
+            route_result["status"] = "stopId missing"
+            results.append(route_result)
+            continue
+
+        # Try predictions
+        pred_url = f"https://retro.umoiq.com/service/publicXMLFeed?command=predictions&a=ttc&stopId={stop_id}"
+        try:
+            pred_resp = requests.get(pred_url)
+            pred_root = ET.fromstring(pred_resp.content)
+            predictions = pred_root.findall('.//prediction')
+            found_tag = None
+            for pred in predictions:
+                rt = pred.attrib.get('routeTag')
+                if rt:
+                    found_tag = rt
+                    break
+
+            if found_tag:
+                route_result["status"] = f"✅ routeTag found: {found_tag}"
+            else:
+                route_result["status"] = "❌ routeTag missing"
+        except Exception as e:
+            route_result["status"] = f"predictions failed: {str(e)}"
+
+        results.append(route_result)
+        time.sleep(0.25)  # small delay to avoid hammering server
+
+    return {"tested": len(results), "results": results}
 
